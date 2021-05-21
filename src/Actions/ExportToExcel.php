@@ -52,6 +52,16 @@ class ExportToExcel extends Action implements FromQuery, WithCustomChunkSize, Wi
     protected $resource;
 
     /**
+     * @var callable|null
+     */
+    protected $alterateQuery;
+
+    /**
+     * @var array|null
+     */
+    protected $exportFields;
+
+    /**
      * @var Builder
      */
     protected $query;
@@ -90,6 +100,10 @@ class ExportToExcel extends Action implements FromQuery, WithCustomChunkSize, Wi
         $this->handleOnly($this->request);
         $this->handleHeadings($query, $this->request);
 
+        if (!is_null($this->alterateQuery)) {
+            ($this->alterateQuery)($query);
+        }
+
         return $this->handle($request, $this->withQuery($query));
     }
 
@@ -117,6 +131,30 @@ class ExportToExcel extends Action implements FromQuery, WithCustomChunkSize, Wi
         return \is_callable($this->onSuccess)
             ? ($this->onSuccess)($request, $response)
             : Action::message(__('Resource was successfully exported.'));
+    }
+
+    /**
+     * @param callable $callable
+     *
+     * @return $this
+     */
+    public function alterateQuery(callable $callable)
+    {
+        $this->alterate = $callable;
+
+        return $this;
+    }
+
+    /**
+     * @param array $fields
+     *
+     * @return $this
+     */
+    public function exportFields(array $fields)
+    {
+        $this->exportFields = $fields;
+
+        return $this;
     }
 
     /**
@@ -237,33 +275,42 @@ class ExportToExcel extends Action implements FromQuery, WithCustomChunkSize, Wi
     protected function replaceFieldValuesWhenOnResource(Model $model, array $only = []): array
     {
         $resource = $this->resolveResource($model);
-        $fields   = $this->resourceFields($resource);
+        $fields   = $this->exportFields ?? $this->resourceFields($resource);
 
         $row = [];
-        foreach ($fields as $field) {
-            if (!$this->isExportableField($field)) {
-                continue;
+
+        // If custom user fields
+        if (is_array($fields)) {
+            foreach ($fields as $field) {
+                $row[$field] = $model->{$field};
+            }
+        } else {
+            // If index fields
+            foreach ($fields as $field) {
+                if (!$this->isExportableField($field)) {
+                    continue;
+                }
+
+                if (\in_array($field->attribute, $only, true)) {
+                    $row[$field->attribute] = $field->value;
+                } elseif (\in_array($field->name, $only, true)) {
+                    // When no field could be found by their attribute name, it's most likely a computed field.
+                    $row[$field->name] = $field->value;
+                }
             }
 
-            if (\in_array($field->attribute, $only, true)) {
-                $row[$field->attribute] = $field->value;
-            } elseif (\in_array($field->name, $only, true)) {
-                // When no field could be found by their attribute name, it's most likely a computed field.
-                $row[$field->name] = $field->value;
+            // Add fields that were requested by ->only(), but are not registered as fields in the Nova resource.
+            foreach (array_diff($only, array_keys($row)) as $attribute) {
+                if ($model->{$attribute}) {
+                    $row[$attribute] = $model->{$attribute};
+                } else {
+                    $row[$attribute] = '';
+                }
             }
+
+            // Fix sorting
+            $row = array_merge(array_flip($only), $row);
         }
-
-        // Add fields that were requested by ->only(), but are not registered as fields in the Nova resource.
-        foreach (array_diff($only, array_keys($row)) as $attribute) {
-            if ($model->{$attribute}) {
-                $row[$attribute] = $model->{$attribute};
-            } else {
-                $row[$attribute] = '';
-            }
-        }
-
-        // Fix sorting
-        $row = array_merge(array_flip($only), $row);
 
         return $row;
     }

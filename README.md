@@ -96,6 +96,32 @@ class User extends Resource
 
 More installation instructions can be found at: [https://docs.laravel-excel.com/nova/1.1/getting-started/installation.html](https://docs.laravel-excel.com/nova/1.1/getting-started/installation.html)
 
+## Modify your export
+
+Currently the export is based on the index fields but this might not be what you want to do.  
+You can modify with ease the query and the exported fields this way:
+
+```php
+    /**
+     * Get the actions available for the resource.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return array
+     */
+    public function actions(Request $request)
+    {
+        return [
+            (new DownloadExcel)
+                ->alterateQuery(function ($query) {
+                    $query->select('id', 'first_name');
+                })
+                ->exportFields(['first_name', 'id']),
+        ];
+    }
+```
+
+Feel free to join tables if necessary but you should always select the fields you want to export to avoid confusions.
+
 ## 🎓 Learning Laravel Excel
 
 You can find the full documentation of Laravel Nova Excel [on the website](https://docs.laravel-excel.com/nova).
